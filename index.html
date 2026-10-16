@@ -554,24 +554,43 @@
 
   var ULT = null;
 
+  // Errores que se resuelven solos esperando unos segundos (límites de Google, fila de espera llena, red lenta)
+  var REINTENTABLE = /REINTENTAR|simult|too many|demasiad|timed out|tiempo de espera|Service invoked|server error|error del servidor|unavailable|network|failed to fetch|no se pudo conectar|ocupad/i;
+
   $('enviar').onclick = function () {
     var b = $('enviar'), c = $('corregir'), mm = $('msgModal'), pl = armarPayload();
+    var intento = 0, esperas = [2000, 4000, 8000, 12000];
     b.disabled = true; c.disabled = true; b.textContent = 'Guardando…'; mm.classList.remove('show');
-    google.script.run
-      .withSuccessHandler(function (r) {
-        b.disabled = false; c.disabled = false; b.textContent = 'Confirmar y enviar';
-        $('modal').classList.remove('show');
-        borrarBorrador();
-        ULT = { tipo: pl.tipo, evento: pl.evento, nombre: pl.nombre, fecha: pl.turnos[pl.turnos.length - 1].fecha };
-        $('okTxt').textContent = r.n + (r.n === 1 ? ' día registrado' : ' días registrados') + ' · ' + r.horas + ' h en total';
-        $('form').style.display = 'none'; $('ok').style.display = 'block'; window.scrollTo(0, 0);
-      })
-      .withFailureHandler(function (e) {
-        b.disabled = false; c.disabled = false; b.textContent = 'Confirmar y enviar';
-        mm.textContent = (e && e.message ? e.message : 'No se pudo guardar. Intenta de nuevo.').replace(/^Error:\s*/, '');
-        mm.classList.add('show');
-      })
-      .guardarRegistros(pl);
+
+    function fin() { b.disabled = false; c.disabled = false; b.textContent = 'Confirmar y enviar'; }
+
+    function enviar() {
+      google.script.run
+        .withSuccessHandler(function (r) {
+          fin();
+          $('modal').classList.remove('show');
+          borrarBorrador();
+          ULT = { tipo: pl.tipo, evento: pl.evento, nombre: pl.nombre, fecha: pl.turnos[pl.turnos.length - 1].fecha };
+          $('okTxt').textContent = r.n + (r.n === 1 ? ' día registrado' : ' días registrados') + ' · ' + r.horas + ' h en total';
+          $('form').style.display = 'none'; $('ok').style.display = 'block'; window.scrollTo(0, 0);
+        })
+        .withFailureHandler(function (e) {
+          var msg = (e && e.message ? e.message : String(e || '')).replace(/^Error:\s*/, '');
+          if (REINTENTABLE.test(msg) && intento < esperas.length) {
+            // Mismo id en cada intento: si el anterior sí llegó a guardarse, no se duplica
+            b.textContent = 'Mucha actividad… reintentando (' + (intento + 1) + '/' + esperas.length + ')';
+            setTimeout(enviar, esperas[intento++]);
+            return;
+          }
+          fin();
+          mm.textContent = REINTENTABLE.test(msg)
+            ? 'Hay mucha actividad o la conexión falló. Tus datos siguen aquí: espera unos segundos y toca “Confirmar y enviar” otra vez. No se duplicará.'
+            : (msg || 'No se pudo guardar. Intenta de nuevo.');
+          mm.classList.add('show');
+        })
+        .guardarRegistros(pl);
+    }
+    enviar();
   };
 
   function resetForm() {
