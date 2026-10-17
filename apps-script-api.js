@@ -15,7 +15,10 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqIfPlr1x-gIboc9
   if (window.google && window.google.script && window.google.script.run) return; // dentro de Apps Script
 
   var TIMEOUT_MS = 60000;
-  var FUNCIONES = ['getListas', 'getListasAdmin', 'guardarListas', 'guardarRegistros', 'consultarServicios', 'getUrlApp'];
+  var TIMEOUT_LARGO_MS = 300000; // la limpieza de registros puede tardar más
+  var FUNCIONES = ['getListas', 'getListasAdmin', 'guardarListas', 'guardarRegistros', 'consultarServicios', 'getUrlApp',
+                   'vistaPreviaLimpieza', 'limpiarRegistros'];
+  var LARGAS = { vistaPreviaLimpieza: 1, limpiarRegistros: 1 };
 
   function llamar(nombre, args) {
     // El enlace "Administración" apunta a admin.html (en Apps Script era ?page=admin)
@@ -26,7 +29,7 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqIfPlr1x-gIboc9
       return Promise.reject(new Error('Falta configurar la URL de Apps Script en el archivo apps-script-api.js.'));
     }
     var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = ctl ? setTimeout(function () { ctl.abort(); }, TIMEOUT_MS) : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, LARGAS[nombre] ? TIMEOUT_LARGO_MS : TIMEOUT_MS) : null;
     return fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       // text/plain evita la comprobación previa (preflight) de CORS, que Apps Script no responde

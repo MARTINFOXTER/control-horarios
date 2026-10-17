@@ -28,6 +28,14 @@
   .btn:disabled { opacity:.6; }
   .msg { margin-top:10px; font-size:15px; font-weight:600; }
   .msg.err { color:var(--err); } .msg.ok { color:var(--ok); }
+  .warn { background:#fff7e0; border:1px solid #e6cf82; border-radius:10px; padding:10px 12px; font-size:14px; margin:10px 0; }
+  select { width:100%; min-height:48px; font-size:16px; padding:8px; border:1.5px solid var(--line); border-radius:10px; background:#fff; }
+  .opt { display:flex; gap:8px; align-items:flex-start; margin:8px 0; font-size:15px; }
+  .opt input { margin-top:4px; transform:scale(1.2); }
+  .btn2 { min-height:48px; padding:12px 20px; font-size:16px; font-weight:700; border:1.5px solid var(--gold); background:#fff; border-radius:12px; cursor:pointer; width:100%; }
+  .btn2:disabled { opacity:.6; }
+  .btnred { background:#c62828; color:#fff; border:0; }
+  .res { background:#f7f4ea; border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; line-height:1.6; }
 </style>
 </head>
 <body>
@@ -55,6 +63,24 @@
         <div class="col"><h3>SERVICIOS <button class="az" data-az="servicios">A–Z</button></h3><div class="sub"><span id="c_servicios">0</span> servicios</div><textarea id="servicios"></textarea></div>
       </div>
     </div>
+    <div class="card" id="limpieza">
+      <b>Limpiar registros antiguos</b>
+      <p class="help" style="margin-top:6px">Quita de la hoja de registros lo más viejo para que siga rápida. Se recomienda respaldar en la hoja <b>backup</b> antes de borrar: allí queda una copia completa.</p>
+      <label class="help" for="lmeses" style="display:block;margin:12px 0 4px">Borrar los registros con más de…</label>
+      <select id="lmeses">
+        <option value="1">1 mes de antigüedad</option>
+        <option value="2" selected>2 meses de antigüedad</option>
+        <option value="3">3 meses de antigüedad</option>
+        <option value="6">6 meses de antigüedad</option>
+        <option value="12">12 meses de antigüedad</option>
+      </select>
+      <label class="opt"><input type="radio" name="lmodo" value="backup" checked><span><b>Respaldar en la hoja "backup" y luego borrar</b> (recomendado)</span></label>
+      <label class="opt"><input type="radio" name="lmodo" value="borrar"><span>Borrar <b>sin</b> respaldo (no se puede deshacer)</span></label>
+      <button class="btn2" id="lcalc">Calcular qué se quitaría</button>
+      <div class="res" id="lres" style="display:none"></div>
+      <button class="btn2 btnred" id="lgo" style="display:none"></button>
+      <div class="msg" id="lmsg"></div>
+    </div>
     <button class="btn" id="guardar">Guardar cambios</button>
     <div class="msg" id="msg"></div>
   </div>
@@ -65,6 +91,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var KEYS = ['fijos', 'personalEventos', 'eventosFijos', 'eventos', 'cargos', 'servicios'];
   var PIN = '';
+  var VER = '';
 
   function lineas(k) {
     return $(k).value.split('\n').map(function (v) { return v.trim(); }).filter(function (v) { return v !== ''; });
@@ -85,6 +112,7 @@
     PIN = $('pin').value; $('loginMsg').textContent = '';
     google.script.run
       .withSuccessHandler(function (l) {
+        VER = l._v || '';
         KEYS.forEach(function (k) { $(k).value = (l[k] || []).join('\n'); contar(k); });
         $('login').style.display = 'none'; $('panel').style.display = 'block';
       })
@@ -94,11 +122,12 @@
   $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('entrar').click(); });
 
   $('guardar').onclick = function () {
-    var listas = {}; KEYS.forEach(function (k) { listas[k] = lineas(k); });
+    var listas = {}; KEYS.forEach(function (k) { listas[k] = lineas(k); }); listas._v = VER;
     var b = $('guardar'), m = $('msg');
     b.disabled = true; b.textContent = 'Guardando…'; m.className = 'msg'; m.textContent = '';
     google.script.run
-      .withSuccessHandler(function () {
+      .withSuccessHandler(function (r) {
+        if (r && r._v) VER = r._v;
         b.disabled = false; b.textContent = 'Guardar cambios';
         m.className = 'msg ok'; m.textContent = '✓ Guardado. Ya está disponible en el formulario.';
       })
@@ -107,6 +136,69 @@
         m.className = 'msg err'; m.textContent = (e.message || 'Error al guardar').replace(/^Error:\s*/, '');
       })
       .guardarListas(PIN, listas);
+  };
+  /* ---------- Limpieza de registros antiguos ---------- */
+  var LPV = null;
+  function lmodo() { return document.querySelector('input[name=lmodo]:checked').value; }
+  function lmsg(txt, tipo) { var m = $('lmsg'); m.className = 'msg' + (tipo ? ' ' + tipo : ''); m.textContent = txt || ''; }
+  function lerr(e) { return (e && e.message ? e.message : 'Error').replace(/^Error:\s*/, ''); }
+  function lreset() { LPV = null; $('lres').style.display = 'none'; $('lgo').style.display = 'none'; }
+  $('lmeses').onchange = lreset;
+  document.querySelectorAll('input[name=lmodo]').forEach(function (r) { r.onchange = function () { if (LPV) mostrarPV(); }; });
+
+  function mostrarPV() {
+    var p = LPV, el = $('lres'), go = $('lgo');
+    el.style.display = 'block';
+    if (!p.antiguas) {
+      el.innerHTML = 'No hay registros anteriores al <b>' + p.corte + '</b>. No hay nada que limpiar.<br>Total en la hoja: ' + p.total + ' registros.';
+      go.style.display = 'none'; return;
+    }
+    el.innerHTML = 'Se quitarán los registros con fecha de servicio anterior al <b>' + p.corte + '</b>:<br>' +
+      '• A quitar: <b>' + p.antiguas + '</b> registros (el más antiguo es del ' + p.masAntigua + ')<br>' +
+      '• Se quedan: <b>' + p.quedan + '</b> registros' + (p.sinFecha ? ' (' + p.sinFecha + ' sin fecha legible: no se tocan)' : '') +
+      (p.filasBackup ? '<br>• La hoja backup ya tiene ' + p.filasBackup + ' filas; se agregará debajo.' : '');
+    go.style.display = 'block';
+    go.textContent = lmodo() === 'backup' ? 'Respaldar ' + p.antiguas + ' registros en "backup" y borrarlos' : 'Borrar ' + p.antiguas + ' registros SIN respaldo';
+  }
+
+  $('lcalc').onclick = function () {
+    var b = $('lcalc'); lmsg(''); lreset();
+    b.disabled = true; b.textContent = 'Calculando…';
+    google.script.run
+      .withSuccessHandler(function (p) { b.disabled = false; b.textContent = 'Calcular qué se quitaría'; LPV = p; mostrarPV(); })
+      .withFailureHandler(function (e) { b.disabled = false; b.textContent = 'Calcular qué se quitaría'; lmsg(lerr(e), 'err'); })
+      .vistaPreviaLimpieza(PIN, $('lmeses').value);
+  };
+
+  $('lgo').onclick = function () {
+    if (!LPV || !LPV.antiguas) return;
+    var modo = lmodo(), p = LPV, b = $('lgo');
+    if (modo === 'borrar') {
+      var t = window.prompt('Vas a BORRAR ' + p.antiguas + ' registros sin copia. Escribe BORRAR para confirmar:');
+      if (t === null || t.trim().toUpperCase() !== 'BORRAR') { lmsg('Cancelado. No se borró nada.', ''); return; }
+    } else if (!window.confirm('Se copiarán ' + p.antiguas + ' registros a la hoja "backup" y luego se borrarán de la hoja de registros. ¿Continuar?')) {
+      return;
+    }
+    $('lcalc').disabled = true; b.disabled = true; var txt = b.textContent; b.textContent = 'Trabajando… no cierres la página';
+    lmsg('');
+    var intento = 0;
+    function lanzar() {
+      google.script.run
+        .withSuccessHandler(function (r) {
+          $('lcalc').disabled = false; b.disabled = false; b.textContent = txt;
+          lreset();
+          lmsg('✓ Listo. ' + (r.movidas ? 'Copiados a "backup": ' + r.movidas + '. ' : '') + 'Quitados: ' + r.borradas + '. Quedan ' + r.quedan + ' registros.', 'ok');
+        })
+        .withFailureHandler(function (e) {
+          var m = lerr(e);
+          if (/REINTENTAR|conectar|inv[aá]lida/i.test(m) && intento < 3) { intento++; b.textContent = 'Reintentando… (' + intento + '/3)'; setTimeout(lanzar, 4000 * intento); return; }
+          $('lcalc').disabled = false; b.disabled = false; b.textContent = txt;
+          if (/cambiaron/.test(m)) lreset();
+          lmsg(m + (/conectar|inv[aá]lida|REINTENTAR/i.test(m) ? ' Antes de repetir pulsa "Calcular": si ya se hizo, aparecerá que no hay nada que limpiar.' : ''), 'err');
+        })
+        .limpiarRegistros(PIN, $('lmeses').value, modo, p.token);
+    }
+    lanzar();
   };
 </script>
 </body>

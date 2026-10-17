@@ -190,7 +190,7 @@
 
     <div class="card">
       <div class="q">OBSERVACIONES <span class="note">Opcional.</span></div>
-      <textarea id="obs"></textarea>
+      <textarea id="obs" maxlength="500"></textarea>
     </div>
 
     <div class="msg" id="msg"></div>
@@ -375,7 +375,7 @@
     $('nombreBuscar').value = v || '';
     $('nombreBuscar').classList.toggle('ok', !!v);
     $('nombreLista').style.display = 'none';
-    if (v && typeof prefetchServicios === 'function') prefetchServicios(v);
+    prefetchServicios(v || '');
   }
 
   function mostrarCoincidencias() {
@@ -465,6 +465,8 @@
     for (var i = 0; i < S.turnos.length; i++) {
       var t = S.turnos[i], c = calc(t);
       if (!t.fecha) return error('Día ' + (i + 1) + ': elige la fecha.', 'cardTurnos'), false;
+      var dd = Math.round((new Date(t.fecha + 'T00:00:00') - new Date(hoy() + 'T00:00:00')) / 86400000);
+      if (isNaN(dd) || dd < -400 || dd > 60) return error('Día ' + (i + 1) + ': la fecha no es válida (revisa el año).', 'cardTurnos'), false;
       if (!c) return error('Día ' + (i + 1) + ': elige hora y minutos de entrada y de salida.', 'cardTurnos'), false;
       if (c.dur === 0) return error('Día ' + (i + 1) + ': la entrada y la salida son iguales.', 'cardTurnos'), false;
       ints.push({ a: c.ini, b: c.ini + c.dur, n: i + 1 });
@@ -516,108 +518,86 @@
   var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   function plural(n, uno, varios) { return n + ' ' + (n === 1 ? uno : varios); }
 
-  // Datos de servicios de la persona, descargados en segundo plano apenas elige su nombre
-  var PRE = null;
-
+  var PRE = null; // {nombre, res, esperando:[]}
   function prefetchServicios(nombre) {
-    if (!nombre) return;
-    if (PRE && PRE.nombre === nombre && Date.now() - PRE.t < 300000) return;
-    var mine = PRE = { nombre: nombre, t: Date.now(), mapa: null, pend: true, espera: null };
+    if (!nombre) { PRE = null; return; }
+    var mi = { nombre: nombre, res: null, fallo: false, esperando: [] };
+    PRE = mi;
+    var h = hoy();
     google.script.run
       .withSuccessHandler(function (res) {
-        if (PRE !== mine) return;
-        mine.mapa = (res && res.mapa) || null; mine.pend = false; mine.t = Date.now();
-        if (mine.espera) mine.espera();
+        mi.res = res || {}; var w = mi.esperando; mi.esperando = [];
+        w.forEach(function (f) { f(mi.res); });
       })
       .withFailureHandler(function () {
-        var esp = mine.espera; mine.pend = false;
-        if (PRE === mine) PRE = null;
-        if (esp) esp();
+        mi.fallo = true; var w = mi.esperando; mi.esperando = [];
+        w.forEach(function (f) { f(null); });
       })
-      .consultarServicios(nombre, [hoy()], hoy().slice(0, 7));
+      .consultarServicios(nombre, [h], h.slice(0, 7));
   }
-
-  function desdeMapa(mapa, fechas, mes) {
-    var c = {}, minMes = 0;
-    fechas.forEach(function (f) { if (mapa[f]) c[f] = mapa[f][0]; });
-    Object.keys(mapa).forEach(function (k) { if (k.slice(0, 7) === mes) minMes += mapa[k][1]; });
-    return { c: c, minMes: minMes };
+  function desdeMapa(res, fechas) {
+    var c = {}, m = (res && res.mapa) || {};
+    fechas.forEach(function (f) { c[f] = m[f] ? m[f][0] : ((res && res.c && res.c[f]) || 0); });
+    return { c: c, minMes: (res && res.minMes) || 0 };
   }
 
   function pedirAviso(p) {
     var tok = ++AVISO_TOK, hoyIso = hoy(), mes = hoyIso.slice(0, 7), fechas = [hoyIso];
     S.turnos.forEach(function (t) { if (fechas.indexOf(t.fecha) < 0) fechas.push(t.fecha); });
-
     function pintar(res) {
       if (tok !== AVISO_TOK) return;
       var el = $('avisoServ'); if (!el) return;
-        var c = (res && res.c) || {}, minMes = (res && res.minMes) || 0;
-        var n = c[hoyIso] || 0, nuevos = S.turnos.filter(function (t) { return t.fecha === hoyIso; }).length;
-        var l1;
-        if (n === 0) {
-          l1 = nuevos === 0 ? 'Hoy no tienes servicios enviados.'
-             : (nuevos === 1 ? 'Este será tu primer servicio de hoy.' : 'Con este envío tendrás ' + nuevos + ' servicios hoy.');
-        } else {
-          l1 = 'Tienes ' + plural(n, 'servicio enviado', 'servicios enviados') + ' hoy.' +
-               (nuevos > 0 ? ' Con este envío serán ' + (n + nuevos) + '.' : '');
-        }
-        var h2 = '<div>' + l1 + '</div>';
-        fechas.forEach(function (f) {
-          if (f === hoyIso || !c[f]) return;
-          h2 += '<div>El ' + fmtFecha(f) + ' ya tienes ' + plural(c[f], 'servicio registrado', 'servicios registrados') + '.</div>';
-        });
-        var nuevosMes = 0;
-        S.turnos.forEach(function (t) { var k = calc(t); if (k && t.fecha.slice(0, 7) === mes) nuevosMes += k.dur; });
-        h2 += '<div>Total horas del mes (' + MESES[+mes.slice(5, 7) - 1] + '): <b>' + fmtMin(minMes) + '</b>' +
-              (nuevosMes > 0 ? ' · con este envío: <b>' + fmtMin(minMes + nuevosMes) + '</b>' : '') + '</div>';
-        el.innerHTML = h2;
+      if (!res) { el.remove(); return; }
+      var d = desdeMapa(res, fechas), c = d.c, minMes = d.minMes;
+      var n = c[hoyIso] || 0, nuevos = S.turnos.filter(function (t) { return t.fecha === hoyIso; }).length;
+      var l1;
+      if (n === 0) {
+        l1 = nuevos === 0 ? 'Hoy no tienes servicios enviados.'
+           : (nuevos === 1 ? 'Este será tu primer servicio de hoy.' : 'Con este envío tendrás ' + nuevos + ' servicios hoy.');
+      } else {
+        l1 = 'Tienes ' + plural(n, 'servicio enviado', 'servicios enviados') + ' hoy.' +
+             (nuevos > 0 ? ' Con este envío serán ' + (n + nuevos) + '.' : '');
+      }
+      var h2 = '<div>' + l1 + '</div>';
+      fechas.forEach(function (f) {
+        if (f === hoyIso || !c[f]) return;
+        h2 += '<div>El ' + fmtFecha(f) + ' ya tienes ' + plural(c[f], 'servicio registrado', 'servicios registrados') + '.</div>';
+      });
+      var nuevosMes = 0;
+      S.turnos.forEach(function (t) { var k = calc(t); if (k && t.fecha.slice(0, 7) === mes) nuevosMes += k.dur; });
+      h2 += '<div>Total horas del mes (' + MESES[+mes.slice(5, 7) - 1] + '): <b>' + fmtMin(minMes) + '</b>' +
+            (nuevosMes > 0 ? ' · con este envío: <b>' + fmtMin(minMes + nuevosMes) + '</b>' : '') + '</div>';
+      el.innerHTML = h2;
     }
-    function quitar() { if (tok !== AVISO_TOK) return; var el = $('avisoServ'); if (el) el.remove(); }
-
-    function consultar() {
-      google.script.run
-        .withSuccessHandler(function (res) {
-          if (res && res.mapa && PRE && PRE.nombre === p.nombre) { PRE.mapa = res.mapa; PRE.pend = false; PRE.t = Date.now(); }
-          pintar(res);
-        })
-        .withFailureHandler(quitar)
-        .consultarServicios(p.nombre, fechas, mes);
+    if (PRE && PRE.nombre === p.nombre) {
+      if (PRE.res) { pintar(PRE.res); return; }
+      if (!PRE.fallo) { PRE.esperando.push(pintar); return; }
     }
-
-    // 1) ya descargado: aparece al instante
-    if (PRE && PRE.nombre === p.nombre && PRE.mapa && Date.now() - PRE.t < 300000) {
-      pintar(desdeMapa(PRE.mapa, fechas, mes)); return;
-    }
-    // 2) se está descargando: se espera esa misma respuesta (sin pedir otra)
-    if (PRE && PRE.nombre === p.nombre && PRE.pend) {
-      PRE.espera = function () {
-        if (PRE && PRE.nombre === p.nombre && PRE.mapa) pintar(desdeMapa(PRE.mapa, fechas, mes));
-        else consultar();
-      };
-      return;
-    }
-    // 3) nada previo: se consulta ahora
-    consultar();
+    google.script.run
+      .withSuccessHandler(pintar)
+      .withFailureHandler(function () { pintar(null); })
+      .consultarServicios(p.nombre, fechas, mes);
   }
 
   $('corregir').onclick = function () { $('modal').classList.remove('show'); };
 
   var ULT = null;
+  var REINTENTABLE = /REINTENTAR|simult|too many|demasiad|timed out|tiempo de espera|Service invoked|server error|error del servidor|unavailable|network|failed to fetch|no se pudo conectar|ocupad|respuesta inv[aá]lida/i;
+  var ESPERAS = [2000, 4000, 8000, 12000];
 
-  // Errores que se resuelven solos esperando unos segundos (límites de Google, fila de espera llena, red lenta)
-  var REINTENTABLE = /REINTENTAR|simult|too many|demasiad|timed out|tiempo de espera|Service invoked|server error|error del servidor|unavailable|network|failed to fetch|no se pudo conectar|ocupad/i;
+  function hashTxt(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36); }
 
   $('enviar').onclick = function () {
     var b = $('enviar'), c = $('corregir'), mm = $('msgModal'), pl = armarPayload();
-    var intento = 0, esperas = [2000, 4000, 8000, 12000];
+    // mismo id solo mientras el contenido sea idéntico (reintento); si cambió algo, id nuevo
+    var base = pl.id; pl.id = base + '-' + hashTxt(JSON.stringify(pl));
     b.disabled = true; c.disabled = true; b.textContent = 'Guardando…'; mm.classList.remove('show');
-
-    function fin() { b.disabled = false; c.disabled = false; b.textContent = 'Confirmar y enviar'; }
-
-    function enviar() {
+    var intento = 0;
+    function liberar() { b.disabled = false; c.disabled = false; b.textContent = 'Confirmar y enviar'; }
+    function intentar() {
       google.script.run
         .withSuccessHandler(function (r) {
-          fin();
+          liberar();
           $('modal').classList.remove('show');
           borrarBorrador();
           PRE = null;
@@ -626,22 +606,21 @@
           $('form').style.display = 'none'; $('ok').style.display = 'block'; window.scrollTo(0, 0);
         })
         .withFailureHandler(function (e) {
-          var msg = (e && e.message ? e.message : String(e || '')).replace(/^Error:\s*/, '');
-          if (REINTENTABLE.test(msg) && intento < esperas.length) {
-            // Mismo id en cada intento: si el anterior sí llegó a guardarse, no se duplica
-            b.textContent = 'Mucha actividad… reintentando (' + (intento + 1) + '/' + esperas.length + ')';
-            setTimeout(enviar, esperas[intento++]);
+          var txt = (e && e.message ? e.message : 'No se pudo guardar. Intenta de nuevo.').replace(/^Error:\s*/, '');
+          if (REINTENTABLE.test(txt) && intento < ESPERAS.length) {
+            b.textContent = 'Reintentando… (' + (intento + 1) + '/' + ESPERAS.length + ')';
+            setTimeout(intentar, ESPERAS[intento++]);
             return;
           }
-          fin();
-          mm.textContent = REINTENTABLE.test(msg)
-            ? 'Hay mucha actividad o la conexión falló. Tus datos siguen aquí: espera unos segundos y toca “Confirmar y enviar” otra vez. No se duplicará.'
-            : (msg || 'No se pudo guardar. Intenta de nuevo.');
+          liberar();
+          mm.textContent = REINTENTABLE.test(txt)
+            ? 'El sistema está muy ocupado. Tus datos NO se perdieron: pulsa "Confirmar y enviar" otra vez en unos segundos (no se duplicará).'
+            : txt;
           mm.classList.add('show');
         })
         .guardarRegistros(pl);
     }
-    enviar();
+    intentar();
   };
 
   function resetForm() {
