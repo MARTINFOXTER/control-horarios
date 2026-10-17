@@ -583,7 +583,8 @@
 
   var ULT = null;
   var REINTENTABLE = /REINTENTAR|simult|too many|demasiad|timed out|tiempo de espera|Service invoked|server error|error del servidor|unavailable|network|failed to fetch|no se pudo conectar|ocupad|respuesta inv[aá]lida/i;
-  var ESPERAS = [2000, 4000, 8000, 12000];
+  var ESPERAS = [2000, 3000, 5000, 8000, 10000, 12000, 15000, 15000, 15000, 15000, 20000, 20000]; // ≈ 2,5 min en total, con variación aleatoria
+  function conJitter(ms) { return Math.round(ms * (0.6 + Math.random() * 0.8)); }
 
   function hashTxt(t) { var h = 5381; for (var i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36); }
 
@@ -597,7 +598,7 @@
     function intentar() {
       google.script.run
         .withSuccessHandler(function (r) {
-          liberar();
+          liberar(); mm.classList.remove('show');
           $('modal').classList.remove('show');
           borrarBorrador();
           PRE = null;
@@ -608,8 +609,9 @@
         .withFailureHandler(function (e) {
           var txt = (e && e.message ? e.message : 'No se pudo guardar. Intenta de nuevo.').replace(/^Error:\s*/, '');
           if (REINTENTABLE.test(txt) && intento < ESPERAS.length) {
-            b.textContent = 'Reintentando… (' + (intento + 1) + '/' + ESPERAS.length + ')';
-            setTimeout(intentar, ESPERAS[intento++]);
+            b.textContent = 'Hay mucha gente enviando, en cola… (' + (intento + 1) + '/' + ESPERAS.length + ')';
+            mm.textContent = 'No cierres esta pantalla: tu registro se enviará solo en cuanto haya turno.'; mm.classList.add('show');
+            setTimeout(intentar, conJitter(ESPERAS[intento++]));
             return;
           }
           liberar();
@@ -839,7 +841,11 @@
   });
 
   /* ---------- Inicio ---------- */
-  google.script.run.withSuccessHandler(function (l) {
+  var LISTAS_KEY = 'jl_listas_v1', iniciado = false;
+  function leerCache() { try { var x = JSON.parse(localStorage.getItem(LISTAS_KEY) || 'null'); return x && x.servicios ? x : null; } catch (e) { return null; } }
+  function guardarCache(l) { try { localStorage.setItem(LISTAS_KEY, JSON.stringify(l)); } catch (e) {} }
+
+  function iniciar(l) {
     L = l;
     chips($('servicio'), L.servicios, 'servicio', false);
     chips($('cargo'), L.cargos, 'cargo', true);
@@ -847,9 +853,34 @@
     $('loading').style.display = 'none';
     $('form').style.display = 'block';
     restaurarBorrador();
-  }).withFailureHandler(function (e) {
-    $('loading').textContent = 'Error al cargar: ' + (e && e.message ? e.message : e);
-  }).getListas();
+    iniciado = true;
+  }
+
+  // Si ya se abrió antes, el formulario aparece al instante con las listas guardadas y se actualiza detrás.
+  var enCache = leerCache();
+  if (enCache) iniciar(enCache);
+
+  function cargarListas(intento) {
+    google.script.run.withSuccessHandler(function (l) {
+      guardarCache(l);
+      if (!iniciado) { iniciar(l); return; }
+      // ya mostrado con la copia local: solo se refrescan las listas sin tocar lo que la persona ya escribió
+      L = l;
+      if (S.tipo) NOMBRES = (S.tipo === 'EVENTO' ? L.personalEventos : L.fijos).slice();
+      var sv = S.servicio, cg = S.cargo;
+      chips($('servicio'), L.servicios, 'servicio', false);
+      chips($('cargo'), L.cargos, 'cargo', true);
+      [['servicio', sv], ['cargo', cg]].forEach(function (p) {
+        if (!p[1]) return;
+        Array.prototype.forEach.call($(p[0]).children, function (c) { if (c.textContent === p[1]) c.classList.add('on'); });
+      });
+    }).withFailureHandler(function (e) {
+      if (intento < 5) { setTimeout(function () { cargarListas(intento + 1); }, Math.round((1500 + intento * 1500) * (0.6 + Math.random() * 0.8))); return; }
+      if (!iniciado) $('loading').textContent = 'No se pudo cargar. Revisa tu conexión y recarga la página. (' + (e && e.message ? e.message : e) + ')';
+    }).getListas();
+  }
+  if (!iniciado) $('loading').textContent = 'Cargando…';
+  cargarListas(0);
 
 
   google.script.run.withSuccessHandler(function (url) {
