@@ -375,6 +375,7 @@
     $('nombreBuscar').value = v || '';
     $('nombreBuscar').classList.toggle('ok', !!v);
     $('nombreLista').style.display = 'none';
+    if (v && typeof prefetchServicios === 'function') prefetchServicios(v);
   }
 
   function mostrarCoincidencias() {
@@ -515,13 +516,41 @@
   var MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   function plural(n, uno, varios) { return n + ' ' + (n === 1 ? uno : varios); }
 
+  // Datos de servicios de la persona, descargados en segundo plano apenas elige su nombre
+  var PRE = null;
+
+  function prefetchServicios(nombre) {
+    if (!nombre) return;
+    if (PRE && PRE.nombre === nombre && Date.now() - PRE.t < 300000) return;
+    var mine = PRE = { nombre: nombre, t: Date.now(), mapa: null, pend: true, espera: null };
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (PRE !== mine) return;
+        mine.mapa = (res && res.mapa) || null; mine.pend = false; mine.t = Date.now();
+        if (mine.espera) mine.espera();
+      })
+      .withFailureHandler(function () {
+        var esp = mine.espera; mine.pend = false;
+        if (PRE === mine) PRE = null;
+        if (esp) esp();
+      })
+      .consultarServicios(nombre, [hoy()], hoy().slice(0, 7));
+  }
+
+  function desdeMapa(mapa, fechas, mes) {
+    var c = {}, minMes = 0;
+    fechas.forEach(function (f) { if (mapa[f]) c[f] = mapa[f][0]; });
+    Object.keys(mapa).forEach(function (k) { if (k.slice(0, 7) === mes) minMes += mapa[k][1]; });
+    return { c: c, minMes: minMes };
+  }
+
   function pedirAviso(p) {
     var tok = ++AVISO_TOK, hoyIso = hoy(), mes = hoyIso.slice(0, 7), fechas = [hoyIso];
     S.turnos.forEach(function (t) { if (fechas.indexOf(t.fecha) < 0) fechas.push(t.fecha); });
-    google.script.run
-      .withSuccessHandler(function (res) {
-        if (tok !== AVISO_TOK) return;
-        var el = $('avisoServ'); if (!el) return;
+
+    function pintar(res) {
+      if (tok !== AVISO_TOK) return;
+      var el = $('avisoServ'); if (!el) return;
         var c = (res && res.c) || {}, minMes = (res && res.minMes) || 0;
         var n = c[hoyIso] || 0, nuevos = S.turnos.filter(function (t) { return t.fecha === hoyIso; }).length;
         var l1;
@@ -542,12 +571,33 @@
         h2 += '<div>Total horas del mes (' + MESES[+mes.slice(5, 7) - 1] + '): <b>' + fmtMin(minMes) + '</b>' +
               (nuevosMes > 0 ? ' · con este envío: <b>' + fmtMin(minMes + nuevosMes) + '</b>' : '') + '</div>';
         el.innerHTML = h2;
-      })
-      .withFailureHandler(function () {
-        if (tok !== AVISO_TOK) return;
-        var el = $('avisoServ'); if (el) el.remove();
-      })
-      .consultarServicios(p.nombre, fechas, mes);
+    }
+    function quitar() { if (tok !== AVISO_TOK) return; var el = $('avisoServ'); if (el) el.remove(); }
+
+    function consultar() {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.mapa && PRE && PRE.nombre === p.nombre) { PRE.mapa = res.mapa; PRE.pend = false; PRE.t = Date.now(); }
+          pintar(res);
+        })
+        .withFailureHandler(quitar)
+        .consultarServicios(p.nombre, fechas, mes);
+    }
+
+    // 1) ya descargado: aparece al instante
+    if (PRE && PRE.nombre === p.nombre && PRE.mapa && Date.now() - PRE.t < 300000) {
+      pintar(desdeMapa(PRE.mapa, fechas, mes)); return;
+    }
+    // 2) se está descargando: se espera esa misma respuesta (sin pedir otra)
+    if (PRE && PRE.nombre === p.nombre && PRE.pend) {
+      PRE.espera = function () {
+        if (PRE && PRE.nombre === p.nombre && PRE.mapa) pintar(desdeMapa(PRE.mapa, fechas, mes));
+        else consultar();
+      };
+      return;
+    }
+    // 3) nada previo: se consulta ahora
+    consultar();
   }
 
   $('corregir').onclick = function () { $('modal').classList.remove('show'); };
@@ -570,6 +620,7 @@
           fin();
           $('modal').classList.remove('show');
           borrarBorrador();
+          PRE = null;
           ULT = { tipo: pl.tipo, evento: pl.evento, nombre: pl.nombre, fecha: pl.turnos[pl.turnos.length - 1].fecha };
           $('okTxt').textContent = r.n + (r.n === 1 ? ' día registrado' : ' días registrados') + ' · ' + r.horas + ' h en total';
           $('form').style.display = 'none'; $('ok').style.display = 'block'; window.scrollTo(0, 0);
