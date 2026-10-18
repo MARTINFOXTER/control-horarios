@@ -17,8 +17,8 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqIfPlr1x-gIboc9
   var TIMEOUT_MS = 60000;
   var TIMEOUT_LARGO_MS = 300000; // la limpieza de registros puede tardar más
   var FUNCIONES = ['getListas', 'getListasAdmin', 'guardarListas', 'guardarRegistros', 'consultarServicios', 'getUrlApp',
-                   'vistaPreviaLimpieza', 'limpiarRegistros'];
-  var LARGAS = { vistaPreviaLimpieza: 1, limpiarRegistros: 1 };
+                   'mesesRegistros', 'vistaPreviaLimpieza', 'limpiarRegistros'];
+  var LARGAS = { mesesRegistros: 1, vistaPreviaLimpieza: 1, limpiarRegistros: 1 };
 
   function llamar(nombre, args) {
     // El enlace "Administración" apunta a admin.html (en Apps Script era ?page=admin)

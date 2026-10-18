@@ -36,6 +36,14 @@
   .btn2:disabled { opacity:.6; }
   .btnred { background:#c62828; color:#fff; border:0; }
   .res { background:#f7f4ea; border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; line-height:1.6; }
+  .meses { margin:12px 0 6px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .mes { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #eee6cf; cursor:pointer; font-size:15px; }
+  .mes:last-child { border-bottom:0; }
+  .mes input { transform:scale(1.3); }
+  .mes .t { flex:1; } .mes .t small { display:block; color:var(--muted); font-size:12px; }
+  .mes .c { font-weight:700; white-space:nowrap; }
+  .mes.on { background:#fff7e0; }
+  .rapidos { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 4px; }
 </style>
 </head>
 <body>
@@ -65,18 +73,18 @@
     </div>
     <div class="card" id="limpieza">
       <b>Limpiar registros antiguos</b>
-      <p class="help" style="margin-top:6px">Quita de la hoja de registros lo más viejo para que siga rápida. Se recomienda respaldar en la hoja <b>backup</b> antes de borrar: allí queda una copia completa.</p>
-      <label class="help" for="lmeses" style="display:block;margin:12px 0 4px">Borrar los registros con más de…</label>
-      <select id="lmeses">
-        <option value="1">1 mes de antigüedad</option>
-        <option value="2" selected>2 meses de antigüedad</option>
-        <option value="3">3 meses de antigüedad</option>
-        <option value="6">6 meses de antigüedad</option>
-        <option value="12">12 meses de antigüedad</option>
-      </select>
+      <p class="help" style="margin-top:6px">Aquí ves los meses que hay en la hoja de registros (según la <b>fecha del servicio</b>). Marca los que quieras quitar. Lo recomendado es respaldarlos antes en la hoja <b>backup</b>; al borrar, los registros que quedan suben al inicio de la hoja.</p>
+      <div id="lmeses" class="meses"><div class="help">Cargando meses…</div></div>
+      <div class="rapidos" id="lrapidos" style="display:none">
+        <span class="help">Marcar los más antiguos:</span>
+        <button type="button" class="az" data-n="1">1 mes</button>
+        <button type="button" class="az" data-n="2">2 meses</button>
+        <button type="button" class="az" data-n="3">3 meses</button>
+        <button type="button" class="az" data-n="0">Ninguno</button>
+      </div>
       <label class="opt"><input type="radio" name="lmodo" value="backup" checked><span><b>Respaldar en la hoja "backup" y luego borrar</b> (recomendado)</span></label>
       <label class="opt"><input type="radio" name="lmodo" value="borrar"><span>Borrar <b>sin</b> respaldo (no se puede deshacer)</span></label>
-      <button class="btn2" id="lcalc">Calcular qué se quitaría</button>
+      <button class="btn2" id="lcalc" disabled>Calcular qué se quitaría</button>
       <div class="res" id="lres" style="display:none"></div>
       <button class="btn2 btnred" id="lgo" style="display:none"></button>
       <div class="msg" id="lmsg"></div>
@@ -115,6 +123,7 @@
         VER = l._v || '';
         KEYS.forEach(function (k) { $(k).value = (l[k] || []).join('\n'); contar(k); });
         $('login').style.display = 'none'; $('panel').style.display = 'block';
+        cargarMeses();
       })
       .withFailureHandler(function (e) { $('loginMsg').textContent = (e.message || 'Error').replace(/^Error:\s*/, ''); })
       .getListasAdmin(PIN);
@@ -137,28 +146,64 @@
       })
       .guardarListas(PIN, listas);
   };
-  /* ---------- Limpieza de registros antiguos ---------- */
-  var LPV = null;
+  /* ---------- Limpieza de registros antiguos (por meses) ---------- */
+  var LPV = null, LMES = [], LACTUAL = '';
   function lmodo() { return document.querySelector('input[name=lmodo]:checked').value; }
   function lmsg(txt, tipo) { var m = $('lmsg'); m.className = 'msg' + (tipo ? ' ' + tipo : ''); m.textContent = txt || ''; }
   function lerr(e) { return (e && e.message ? e.message : 'Error').replace(/^Error:\s*/, ''); }
   function lreset() { LPV = null; $('lres').style.display = 'none'; $('lgo').style.display = 'none'; }
-  $('lmeses').onchange = lreset;
+  function lelegidos() {
+    return Array.prototype.map.call(document.querySelectorAll('#lmeses input:checked'), function (x) { return x.value; });
+  }
+  function lactualizar() {
+    var el = lelegidos();
+    Array.prototype.forEach.call(document.querySelectorAll('#lmeses .mes'), function (d) { d.classList.toggle('on', d.querySelector('input').checked); });
+    $('lcalc').disabled = !el.length;
+    lreset();
+  }
+
+  function cargarMeses(mantenerMsg) {
+    if (!mantenerMsg) lmsg('');
+    lreset(); $('lcalc').disabled = true;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        LMES = r.meses || []; LACTUAL = r.mesActual;
+        var h = '';
+        if (!LMES.length) h = '<div class="help" style="padding:12px">No hay registros en la hoja.</div>';
+        LMES.forEach(function (m) {
+          h += '<label class="mes"><input type="checkbox" value="' + m.mes + '"><span class="t">' + m.etiqueta.charAt(0).toUpperCase() + m.etiqueta.slice(1) +
+               (m.mes === LACTUAL ? ' <b>(mes actual)</b>' : '') + '<small>' + m.desde + ' → ' + m.hasta + '</small></span><span class="c">' + m.n + ' registros</span></label>';
+        });
+        $('lmeses').innerHTML = h;
+        $('lrapidos').style.display = LMES.length ? 'flex' : 'none';
+        var nota = 'Total en la hoja: ' + r.total + ' registros' + (r.sinFecha ? ' · ' + r.sinFecha + ' sin fecha legible (nunca se borran)' : '') +
+                   (r.filasBackup ? ' · la hoja backup ya tiene ' + r.filasBackup + ' filas' : '') + '.';
+        var n = document.createElement('div'); n.className = 'help'; n.style.padding = '10px 12px'; n.textContent = nota; $('lmeses').appendChild(n);
+        Array.prototype.forEach.call($('lmeses').querySelectorAll('input'), function (x) { x.onchange = lactualizar; });
+      })
+      .withFailureHandler(function (e) { $('lmeses').innerHTML = '<div class="help" style="padding:12px;color:#c62828">' + lerr(e) + '</div>'; })
+      .mesesRegistros(PIN);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#lrapidos [data-n]'), function (b) {
+    b.onclick = function () {
+      var n = +b.getAttribute('data-n');
+      Array.prototype.forEach.call(document.querySelectorAll('#lmeses input'), function (x, i) { x.checked = i < n; });
+      lactualizar();
+    };
+  });
   document.querySelectorAll('input[name=lmodo]').forEach(function (r) { r.onchange = function () { if (LPV) mostrarPV(); }; });
 
   function mostrarPV() {
     var p = LPV, el = $('lres'), go = $('lgo');
     el.style.display = 'block';
-    if (!p.antiguas) {
-      el.innerHTML = 'No hay registros anteriores al <b>' + p.corte + '</b>. No hay nada que limpiar.<br>Total en la hoja: ' + p.total + ' registros.';
-      go.style.display = 'none'; return;
-    }
-    el.innerHTML = 'Se quitarán los registros con fecha de servicio anterior al <b>' + p.corte + '</b>:<br>' +
-      '• A quitar: <b>' + p.antiguas + '</b> registros (el más antiguo es del ' + p.masAntigua + ')<br>' +
-      '• Se quedan: <b>' + p.quedan + '</b> registros' + (p.sinFecha ? ' (' + p.sinFecha + ' sin fecha legible: no se tocan)' : '') +
-      (p.filasBackup ? '<br>• La hoja backup ya tiene ' + p.filasBackup + ' filas; se agregará debajo.' : '');
+    if (!p.aQuitar) { el.innerHTML = 'En ' + p.elegidos.join(', ') + ' no hay registros. No hay nada que limpiar.'; go.style.display = 'none'; return; }
+    el.innerHTML = 'Se quitarán los registros de: <b>' + p.elegidos.join(', ') + '</b><br>' +
+      '• A quitar: <b>' + p.aQuitar + '</b> registros<br>' +
+      '• Se quedan: <b>' + p.quedan + '</b> registros' + (p.sinFecha ? ' (' + p.sinFecha + ' sin fecha legible: no se tocan)' : '') + ', que subirán al inicio de la hoja' +
+      (lmodo() === 'backup' && p.filasBackup ? '<br>• La hoja backup ya tiene ' + p.filasBackup + ' filas; se agregará debajo.' : '');
     go.style.display = 'block';
-    go.textContent = lmodo() === 'backup' ? 'Respaldar ' + p.antiguas + ' registros en "backup" y borrarlos' : 'Borrar ' + p.antiguas + ' registros SIN respaldo';
+    go.textContent = lmodo() === 'backup' ? 'Respaldar ' + p.aQuitar + ' registros en "backup" y borrarlos' : 'Borrar ' + p.aQuitar + ' registros SIN respaldo';
   }
 
   $('lcalc').onclick = function () {
@@ -167,16 +212,17 @@
     google.script.run
       .withSuccessHandler(function (p) { b.disabled = false; b.textContent = 'Calcular qué se quitaría'; LPV = p; mostrarPV(); })
       .withFailureHandler(function (e) { b.disabled = false; b.textContent = 'Calcular qué se quitaría'; lmsg(lerr(e), 'err'); })
-      .vistaPreviaLimpieza(PIN, $('lmeses').value);
+      .vistaPreviaLimpieza(PIN, lelegidos());
   };
 
   $('lgo').onclick = function () {
-    if (!LPV || !LPV.antiguas) return;
-    var modo = lmodo(), p = LPV, b = $('lgo');
+    if (!LPV || !LPV.aQuitar) return;
+    var modo = lmodo(), p = LPV, b = $('lgo'), elegidos = lelegidos();
+    var actual = elegidos.indexOf(LACTUAL) >= 0 ? '\n\n⚠ Incluye el MES ACTUAL.' : '';
     if (modo === 'borrar') {
-      var t = window.prompt('Vas a BORRAR ' + p.antiguas + ' registros sin copia. Escribe BORRAR para confirmar:');
+      var t = window.prompt('Vas a BORRAR ' + p.aQuitar + ' registros (' + p.elegidos.join(', ') + ') sin copia.' + actual + '\nEscribe BORRAR para confirmar:');
       if (t === null || t.trim().toUpperCase() !== 'BORRAR') { lmsg('Cancelado. No se borró nada.', ''); return; }
-    } else if (!window.confirm('Se copiarán ' + p.antiguas + ' registros a la hoja "backup" y luego se borrarán de la hoja de registros. ¿Continuar?')) {
+    } else if (!window.confirm('Se copiarán ' + p.aQuitar + ' registros (' + p.elegidos.join(', ') + ') a la hoja "backup" y luego se borrarán de la hoja de registros.' + actual + '\n\n¿Continuar?')) {
       return;
     }
     $('lcalc').disabled = true; b.disabled = true; var txt = b.textContent; b.textContent = 'Trabajando… no cierres la página';
@@ -185,18 +231,19 @@
     function lanzar() {
       google.script.run
         .withSuccessHandler(function (r) {
-          $('lcalc').disabled = false; b.disabled = false; b.textContent = txt;
+          b.disabled = false; b.textContent = txt;
           lreset();
-          lmsg('✓ Listo. ' + (r.movidas ? 'Copiados a "backup": ' + r.movidas + '. ' : '') + 'Quitados: ' + r.borradas + '. Quedan ' + r.quedan + ' registros.', 'ok');
+          lmsg('✓ Listo. ' + (r.movidas ? 'Copiados a "backup": ' + r.movidas + '. ' : '') + 'Quitados: ' + r.borradas + '. Quedan ' + r.quedan + ' registros.' + (r.aviso ? ' ⚠ ' + r.aviso : ''), r.aviso ? 'err' : 'ok');
+          cargarMeses(true);
         })
         .withFailureHandler(function (e) {
           var m = lerr(e);
           if (/REINTENTAR|conectar|inv[aá]lida/i.test(m) && intento < 3) { intento++; b.textContent = 'Reintentando… (' + intento + '/3)'; setTimeout(lanzar, 4000 * intento); return; }
-          $('lcalc').disabled = false; b.disabled = false; b.textContent = txt;
+          b.disabled = false; b.textContent = txt; $('lcalc').disabled = false;
           if (/cambiaron/.test(m)) lreset();
           lmsg(m + (/conectar|inv[aá]lida|REINTENTAR/i.test(m) ? ' Antes de repetir pulsa "Calcular": si ya se hizo, aparecerá que no hay nada que limpiar.' : ''), 'err');
         })
-        .limpiarRegistros(PIN, $('lmeses').value, modo, p.token);
+        .limpiarRegistros(PIN, elegidos, modo, p.token);
     }
     lanzar();
   };
