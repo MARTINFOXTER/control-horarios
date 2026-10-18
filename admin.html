@@ -35,6 +35,7 @@
   .btn2 { min-height:48px; padding:12px 20px; font-size:16px; font-weight:700; border:1.5px solid var(--gold); background:#fff; border-radius:12px; cursor:pointer; width:100%; }
   .btn2:disabled { opacity:.6; }
   .btnred { background:#c62828; color:#fff; border:0; }
+  .btnok { background:linear-gradient(180deg,#eed36f,#c9a227); border:0; color:#111; }
   .res { background:#f7f4ea; border-radius:10px; padding:10px 12px; margin:10px 0; font-size:15px; line-height:1.6; }
   .meses { margin:12px 0 6px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
   .mes { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #eee6cf; cursor:pointer; font-size:15px; }
@@ -44,6 +45,8 @@
   .mes .c { font-weight:700; white-space:nowrap; }
   .mes.on { background:#fff7e0; }
   .rapidos { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 4px; }
+  .savebar { position:sticky; bottom:0; z-index:5; background:linear-gradient(180deg,rgba(242,238,227,0),var(--paper) 22%); padding:14px 0 10px; margin-bottom:10px; }
+  .savebar .msg { margin-top:6px; }
 </style>
 </head>
 <body>
@@ -71,6 +74,11 @@
         <div class="col"><h3>SERVICIOS <button class="az" data-az="servicios">A–Z</button></h3><div class="sub"><span id="c_servicios">0</span> servicios</div><textarea id="servicios"></textarea></div>
       </div>
     </div>
+    <div class="savebar">
+      <button class="btn" id="guardar">Guardar cambios</button>
+      <div class="msg" id="msg"></div>
+    </div>
+
     <div class="card" id="limpieza">
       <b>Limpiar registros antiguos</b>
       <p class="help" style="margin-top:6px">Aquí ves los meses que hay en la hoja de registros (según la <b>fecha del servicio</b>). Marca los que quieras quitar. Lo recomendado es respaldarlos antes en la hoja <b>backup</b>; al borrar, los registros que quedan suben al inicio de la hoja.</p>
@@ -82,15 +90,15 @@
         <button type="button" class="az" data-n="3">3 meses</button>
         <button type="button" class="az" data-n="0">Ninguno</button>
       </div>
-      <label class="opt"><input type="radio" name="lmodo" value="backup" checked><span><b>Respaldar en la hoja "backup" y luego borrar</b> (recomendado)</span></label>
-      <label class="opt"><input type="radio" name="lmodo" value="borrar"><span>Borrar <b>sin</b> respaldo (no se puede deshacer)</span></label>
       <button class="btn2" id="lcalc" disabled>Calcular qué se quitaría</button>
       <div class="res" id="lres" style="display:none"></div>
-      <button class="btn2 btnred" id="lgo" style="display:none"></button>
+      <div id="lacciones" style="display:none">
+        <button class="btn2 btnok" id="lgo"></button>
+        <button class="btn2 btnred" id="lgo2" style="margin-top:8px"></button>
+        <div class="help" style="margin-top:6px">El primero guarda una copia en la hoja <b>backup</b> y después borra. El segundo borra directamente y <b>no se puede deshacer</b>.</div>
+      </div>
       <div class="msg" id="lmsg"></div>
     </div>
-    <button class="btn" id="guardar">Guardar cambios</button>
-    <div class="msg" id="msg"></div>
   </div>
 </div>
 
@@ -148,10 +156,9 @@
   };
   /* ---------- Limpieza de registros antiguos (por meses) ---------- */
   var LPV = null, LMES = [], LACTUAL = '';
-  function lmodo() { return document.querySelector('input[name=lmodo]:checked').value; }
   function lmsg(txt, tipo) { var m = $('lmsg'); m.className = 'msg' + (tipo ? ' ' + tipo : ''); m.textContent = txt || ''; }
   function lerr(e) { return (e && e.message ? e.message : 'Error').replace(/^Error:\s*/, ''); }
-  function lreset() { LPV = null; $('lres').style.display = 'none'; $('lgo').style.display = 'none'; }
+  function lreset() { LPV = null; $('lres').style.display = 'none'; $('lacciones').style.display = 'none'; }
   function lelegidos() {
     return Array.prototype.map.call(document.querySelectorAll('#lmeses input:checked'), function (x) { return x.value; });
   }
@@ -192,18 +199,18 @@
       lactualizar();
     };
   });
-  document.querySelectorAll('input[name=lmodo]').forEach(function (r) { r.onchange = function () { if (LPV) mostrarPV(); }; });
 
   function mostrarPV() {
-    var p = LPV, el = $('lres'), go = $('lgo');
+    var p = LPV, el = $('lres');
     el.style.display = 'block';
-    if (!p.aQuitar) { el.innerHTML = 'En ' + p.elegidos.join(', ') + ' no hay registros. No hay nada que limpiar.'; go.style.display = 'none'; return; }
+    if (!p.aQuitar) { el.innerHTML = 'En ' + p.elegidos.join(', ') + ' no hay registros. No hay nada que limpiar.'; $('lacciones').style.display = 'none'; return; }
     el.innerHTML = 'Se quitarán los registros de: <b>' + p.elegidos.join(', ') + '</b><br>' +
       '• A quitar: <b>' + p.aQuitar + '</b> registros<br>' +
       '• Se quedan: <b>' + p.quedan + '</b> registros' + (p.sinFecha ? ' (' + p.sinFecha + ' sin fecha legible: no se tocan)' : '') + ', que subirán al inicio de la hoja' +
-      (lmodo() === 'backup' && p.filasBackup ? '<br>• La hoja backup ya tiene ' + p.filasBackup + ' filas; se agregará debajo.' : '');
-    go.style.display = 'block';
-    go.textContent = lmodo() === 'backup' ? 'Respaldar ' + p.aQuitar + ' registros en "backup" y borrarlos' : 'Borrar ' + p.aQuitar + ' registros SIN respaldo';
+      (p.filasBackup ? '<br>• La hoja backup ya tiene ' + p.filasBackup + ' filas; se agregará debajo.' : '');
+    $('lacciones').style.display = 'block';
+    $('lgo').textContent = 'Respaldar en "backup" y luego borrar (' + p.aQuitar + ')';
+    $('lgo2').textContent = 'Borrar SIN respaldar (' + p.aQuitar + ')';
   }
 
   $('lcalc').onclick = function () {
@@ -215,9 +222,12 @@
       .vistaPreviaLimpieza(PIN, lelegidos());
   };
 
-  $('lgo').onclick = function () {
+  $('lgo').onclick = function () { ejecutar('backup', $('lgo')); };
+  $('lgo2').onclick = function () { ejecutar('borrar', $('lgo2')); };
+
+  function ejecutar(modo, b) {
     if (!LPV || !LPV.aQuitar) return;
-    var modo = lmodo(), p = LPV, b = $('lgo'), elegidos = lelegidos();
+    var p = LPV, elegidos = lelegidos();
     var actual = elegidos.indexOf(LACTUAL) >= 0 ? '\n\n⚠ Incluye el MES ACTUAL.' : '';
     if (modo === 'borrar') {
       var t = window.prompt('Vas a BORRAR ' + p.aQuitar + ' registros (' + p.elegidos.join(', ') + ') sin copia.' + actual + '\nEscribe BORRAR para confirmar:');
@@ -225,13 +235,14 @@
     } else if (!window.confirm('Se copiarán ' + p.aQuitar + ' registros (' + p.elegidos.join(', ') + ') a la hoja "backup" y luego se borrarán de la hoja de registros.' + actual + '\n\n¿Continuar?')) {
       return;
     }
-    $('lcalc').disabled = true; b.disabled = true; var txt = b.textContent; b.textContent = 'Trabajando… no cierres la página';
+    var txt = b.textContent;
+    $('lcalc').disabled = true; $('lgo').disabled = true; $('lgo2').disabled = true; b.textContent = 'Trabajando… no cierres la página';
     lmsg('');
     var intento = 0;
     function lanzar() {
       google.script.run
         .withSuccessHandler(function (r) {
-          b.disabled = false; b.textContent = txt;
+          $('lgo').disabled = false; $('lgo2').disabled = false; b.textContent = txt;
           lreset();
           lmsg('✓ Listo. ' + (r.movidas ? 'Copiados a "backup": ' + r.movidas + '. ' : '') + 'Quitados: ' + r.borradas + '. Quedan ' + r.quedan + ' registros.' + (r.aviso ? ' ⚠ ' + r.aviso : ''), r.aviso ? 'err' : 'ok');
           cargarMeses(true);
@@ -239,14 +250,14 @@
         .withFailureHandler(function (e) {
           var m = lerr(e);
           if (/REINTENTAR|conectar|inv[aá]lida/i.test(m) && intento < 3) { intento++; b.textContent = 'Reintentando… (' + intento + '/3)'; setTimeout(lanzar, 4000 * intento); return; }
-          b.disabled = false; b.textContent = txt; $('lcalc').disabled = false;
+          $('lgo').disabled = false; $('lgo2').disabled = false; b.textContent = txt; $('lcalc').disabled = false;
           if (/cambiaron/.test(m)) lreset();
           lmsg(m + (/conectar|inv[aá]lida|REINTENTAR/i.test(m) ? ' Antes de repetir pulsa "Calcular": si ya se hizo, aparecerá que no hay nada que limpiar.' : ''), 'err');
         })
         .limpiarRegistros(PIN, elegidos, modo, p.token);
     }
     lanzar();
-  };
+  }
 </script>
 </body>
 </html>
