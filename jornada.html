@@ -46,6 +46,13 @@
   .calGrid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; max-width:420px; margin:0 auto; }
   .calDow { text-align:center; font-size:11px; font-weight:800; color:var(--muted); letter-spacing:.5px; padding:4px 0; }
   .calDia { aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:10px; font-size:14px; font-weight:700; }
+  .calDia.trabajado { cursor:pointer; }
+  .calDia.trabajado:active { transform:scale(.93); }
+  .calDia.sel { box-shadow:0 0 0 2.5px var(--ok) inset; }
+  .calTurno { display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:10px 0; border-bottom:1px solid #eee6d0; }
+  .calTurno:last-child { border-bottom:0; }
+  .calTurnoHora { font-size:16px; font-weight:800; white-space:nowrap; }
+  .calTurnoInfo { color:var(--muted); font-size:14px; text-align:right; }
   .calDia.mes { background:#f7f4ea; color:#16130a; border:1.5px solid var(--line); }
   .calDia.trabajado { background:#111; color:var(--gold2); border-color:#111; }
   .calDia.hoy:not(.trabajado) { background:var(--gold); color:#16130a; border-color:var(--gold); font-weight:900; }
@@ -156,7 +163,12 @@
           <span class="calLey"><i class="calDot calDot-si"></i> Día trabajado</span>
           <span class="calLey"><i class="calDot calDot-hoy"></i> Hoy</span>
         </div>
-        <div class="note" id="calNota" style="margin-top:10px; text-align:center;"></div>
+        <div class="note" style="margin-top:8px; text-align:center;">Toca un día trabajado para ver el horario.</div>
+        <div class="note" id="calNota" style="margin-top:6px; text-align:center;"></div>
+      </div>
+      <div class="card" id="calDetalle" style="display:none">
+        <div class="q" id="calDetalleFecha">—</div>
+        <div id="calDetalleLista"></div>
       </div>
       <button class="btn small" id="calVolver">Volver</button>
     </div>
@@ -415,10 +427,12 @@
     for (var i = 0; i < primerDiaSemana; i++) html += '<div class="calDia"></div>';
     for (var d = 1; d <= totalDias; d++) {
       var iso = calAnio + '-' + pad(calMes + 1) + '-' + pad(d);
-      var clases = 'calDia mes' + (calMapa[iso] ? ' trabajado' : '') + (iso === hoyIso ? ' hoy' : '');
-      html += '<div class="' + clases + '">' + d + '</div>';
+      var trabajado = !!calMapa[iso];
+      var clases = 'calDia mes' + (trabajado ? ' trabajado' : '') + (iso === hoyIso ? ' hoy' : '');
+      html += '<div class="' + clases + '"' + (trabajado ? ' data-iso="' + iso + '"' : '') + '>' + d + '</div>';
     }
     $('calGrid').innerHTML = html;
+    $('calDetalle').style.display = 'none';
 
     var limite = new Date(hoy.getFullYear(), hoy.getMonth(), 1); limite.setDate(limite.getDate() - 70);
     var esMesActual = calAnio === hoy.getFullYear() && calMes === hoy.getMonth();
@@ -426,6 +440,23 @@
     $('calNext').disabled = esMesActual || calAnio > hoy.getFullYear() || (calAnio === hoy.getFullYear() && calMes > hoy.getMonth());
     $('calNota').textContent = '';
   }
+
+  // Toca un día trabajado: muestra debajo el horario de ese día (entrada–salida, evento, servicio)
+  function verDetalleDia(iso) {
+    var turnos = (calMapa[iso] && calMapa[iso][2]) || [];
+    Array.prototype.forEach.call($('calGrid').children, function (c) { c.classList.toggle('sel', c.getAttribute('data-iso') === iso); });
+    var p = iso.split('-');
+    $('calDetalleFecha').textContent = p[2] + ' de ' + MESES_LARGO[+p[1] - 1] + ' de ' + p[0];
+    $('calDetalleLista').innerHTML = turnos.length ? turnos.map(function (t) {
+      return '<div class="calTurno"><span class="calTurnoHora">' + esc(t.e) + ' – ' + esc(t.s) + '</span>' +
+        '<span class="calTurnoInfo">' + esc(t.evento) + (t.servicio ? ' · ' + esc(t.servicio) : '') + '</span></div>';
+    }).join('') : '<div class="note">Sin detalle de horario para este día.</div>';
+    $('calDetalle').style.display = 'block';
+  }
+  $('calGrid').addEventListener('click', function (e) {
+    var d = e.target.closest('.calDia.trabajado[data-iso]');
+    if (d) verDetalleDia(d.getAttribute('data-iso'));
+  });
 
   $('verCalendario').onclick = abrirCalendario;
   $('calVolver').onclick = function () { consultar(); };
