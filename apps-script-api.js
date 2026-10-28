@@ -2,7 +2,7 @@
  * Conexión con Google Apps Script para cuando la página está en GitHub Pages.
  *
  * Reemplaza a google.script.run (que solo existe dentro de Apps Script), así que
- * index.html y admin.html funcionan igual sin tocar nada más.
+ * index.html, admin.html y jornada.html funcionan igual sin tocar nada más.
  * Si la página se abre desde Apps Script, este archivo no hace nada.
  *
  * ▼▼▼ ÚNICO DATO QUE DEBES CAMBIAR ▼▼▼
@@ -17,7 +17,8 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqIfPlr1x-gIboc9
   var TIMEOUT_MS = 60000;
   var TIMEOUT_LARGO_MS = 300000; // la limpieza de registros puede tardar más
   var FUNCIONES = ['getListas', 'getListasAdmin', 'guardarListas', 'guardarRegistros', 'consultarServicios', 'getUrlApp',
-                   'mesesRegistros', 'vistaPreviaLimpieza', 'limpiarRegistros'];
+                   'mesesRegistros', 'vistaPreviaLimpieza', 'limpiarRegistros',
+                   'estadoJornada', 'iniciarJornada', 'finalizarJornada', 'cancelarJornada'];
   var LARGAS = { mesesRegistros: 1, vistaPreviaLimpieza: 1, limpiarRegistros: 1 };
 
   function llamar(nombre, args) {

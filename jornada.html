@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jornada · Control de Horarios JL</title>
+<style>
+  :root { --gold:#c9a227; --gold2:#e8cd6a; --paper:#f2eee3; --line:#d9cfb0; --muted:#6b6450; --err:#c62828; --ok:#1b7f3b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:'Segoe UI',Roboto,Arial,sans-serif; background:var(--paper); color:#16130a; font-size:17px; }
+  .hero { background:radial-gradient(circle at 50% 0,#2b2309 0,#000 72%); padding:20px 16px; text-align:center; border-bottom:4px solid var(--gold); }
+  .hero h1 { margin:0; color:var(--gold2); font-size:22px; letter-spacing:3px; }
+  .hero p { margin:5px 0 0; color:#cdbf8f; font-size:12px; letter-spacing:3px; }
+  .wrap { max-width:620px; margin:0 auto; padding:14px 12px 60px; }
+  .card { background:#fff; border:1px solid #e3dac0; border-radius:14px; padding:16px; margin-bottom:12px; }
+  .q { font-weight:700; font-size:16px; letter-spacing:.4px; margin-bottom:12px; display:flex; gap:10px; align-items:center; }
+  .q::before { content:''; width:5px; height:20px; border-radius:3px; background:var(--gold); }
+  .note { color:var(--muted); font-weight:400; font-size:14px; }
+  select, input[type=text], input[type=time], textarea { width:100%; min-height:54px; padding:12px; font-size:17px; border:1.5px solid var(--line); border-radius:10px; background:#fff; font-family:inherit; }
+  textarea { min-height:90px; resize:vertical; }
+  select:focus, input:focus, textarea:focus { outline:3px solid rgba(201,162,39,.45); border-color:var(--gold); }
+  .seg { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .seg button { min-height:60px; font-size:19px; font-weight:700; border:2px solid var(--line); background:#fff; border-radius:12px; cursor:pointer; }
+  .seg button.on { background:#111; border-color:#111; color:var(--gold2); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips button { min-height:48px; padding:10px 16px; font-size:16px; border:2px solid var(--line); background:#fff; border-radius:26px; cursor:pointer; }
+  .chips button.on { background:#111; border-color:#111; color:var(--gold2); font-weight:700; }
+  .combo { position:relative; }
+  .lista { list-style:none; margin:8px 0 0; padding:0; border:1.5px solid var(--gold); border-radius:12px; max-height:260px; overflow:auto; display:none; background:#fff; }
+  .lista li { padding:14px; border-bottom:1px solid #f0e9d2; cursor:pointer; }
+  .lista li.none { color:var(--muted); cursor:default; font-size:15px; }
+  #nombreBuscar.ok { border-color:var(--ok); background:#f1faf3; font-weight:700; }
+  .btn { width:100%; min-height:72px; font-size:22px; font-weight:800; letter-spacing:1px; border:0; border-radius:14px; cursor:pointer; color:#111; background:linear-gradient(180deg,#eed36f,#c9a227); }
+  .btn.stop { background:linear-gradient(180deg,#e25b5b,#b71c1c); color:#fff; }
+  .btn.small { min-height:48px; font-size:16px; background:#fff; border:2px solid var(--line); color:#111; font-weight:700; }
+  .btn:disabled { opacity:.6; cursor:wait; }
+  .msg { display:none; background:#fdecea; color:var(--err); border:1px solid #f3b9b4; border-radius:10px; padding:12px 14px; margin-bottom:12px; font-size:15px; font-weight:600; }
+  .msg.show { display:block; }
+  .on-air { text-align:center; }
+  .badge { display:inline-block; background:#e7f6ea; color:var(--ok); font-weight:800; padding:6px 14px; border-radius:20px; font-size:14px; letter-spacing:1px; }
+  .timer { font-size:56px; font-weight:800; letter-spacing:2px; margin:10px 0 4px; font-variant-numeric:tabular-nums; }
+  .r { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid #eee6d0; font-size:16px; text-align:left; }
+  .r span { color:var(--muted); } .r b { text-align:right; }
+  .done { text-align:center; padding:30px 16px; }
+  .done .check { width:80px; height:80px; margin:0 auto 12px; border-radius:50%; background:#111; color:var(--gold2); font-size:44px; line-height:80px; }
+  .center { text-align:center; padding:40px 0; color:var(--muted); }
+  .link { background:none; border:0; color:var(--muted); text-decoration:underline; font-size:14px; padding:12px; cursor:pointer; width:100%; }
+  a.back { display:block; text-align:center; font-size:13px; color:#9b9378; margin-top:20px; }
+</style>
+</head>
+<body>
+<div class="hero"><h1>JORNADA</h1><p>CONTROL DE HORARIOS · JL SERVICIOS AUXILIARES</p></div>
+<div class="wrap">
+
+  <div id="loading" class="center">Cargando…</div>
+
+  <div id="app" style="display:none">
+    <div class="msg" id="msg"></div>
+
+    <!-- Quién eres -->
+    <div id="quien">
+      <div class="card">
+        <div class="q">TIPO DE SERVICIO</div>
+        <div class="seg" id="tipo">
+          <button type="button" data-v="FIJO">FIJO</button>
+          <button type="button" data-v="EVENTO">EVENTO</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="q">NOMBRE</div>
+        <div class="combo">
+          <input type="text" id="nombreBuscar" placeholder="Primero elige el tipo de servicio" autocomplete="off" autocapitalize="words" spellcheck="false" disabled>
+          <ul class="lista" id="nombreLista"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="consultando" class="center" style="display:none">Consultando tu jornada…</div>
+
+    <!-- Aún no ha iniciado -->
+    <div id="panelInicio" style="display:none">
+      <div class="card">
+        <div class="q">EVENTO / LUGAR</div>
+        <select id="evento"></select>
+      </div>
+      <div class="card">
+        <div class="q">SERVICIO A REALIZAR</div>
+        <div class="chips" id="servicio"></div>
+      </div>
+      <div class="card">
+        <div class="q">CARGO <span class="note">Solo si desempeñas alguno.</span></div>
+        <div class="chips" id="cargo"></div>
+      </div>
+      <button class="btn" id="btnIniciar">▶ INICIAR JORNADA</button>
+    </div>
+
+    <!-- Jornada en curso -->
+    <div id="panelActiva" style="display:none">
+      <div class="card on-air">
+        <span class="badge">● JORNADA EN CURSO</span>
+        <div class="timer" id="timer">00:00:00</div>
+        <div class="note">Iniciaste a las <b id="iniHora"></b></div>
+        <div style="margin-top:12px" id="detalle"></div>
+      </div>
+      <div class="card" id="cardManual" style="display:none">
+        <div class="q">HORA REAL DE SALIDA <span class="note">Se te pasó finalizar. ¿A qué hora terminaste?</span></div>
+        <input type="time" id="salidaManual">
+      </div>
+      <div class="card">
+        <div class="q">OBSERVACIONES <span class="note">Opcional.</span></div>
+        <textarea id="obs" maxlength="500"></textarea>
+      </div>
+      <button class="btn stop" id="btnFinalizar">■ FINALIZAR JORNADA</button>
+      <button class="link" id="btnCancelar">Me equivoqué al iniciar (cancelar sin registrar)</button>
+    </div>
+
+    <!-- Listo -->
+    <div id="ok" class="card done" style="display:none">
+      <div class="check">✓</div>
+      <h2 id="okTit">Listo</h2>
+      <p id="okTxt" style="color:var(--muted)"></p>
+      <button class="btn small" id="nuevo">Volver al inicio</button>
+    </div>
+
+    <a class="back" href="index.html">Registro manual de horas</a>
+  </div>
+</div>
+
+<script src="apps-script-api.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY = 'jl_jornada_usuario';
+  var L = null, NOMBRES = [];
+  var S = { tipo: '', nombre: '', servicio: '', cargo: '', jor: null, off: 0 };
+  var tick = null;
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function plano(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function limpiarErr(e) { return (e && e.message ? e.message : 'Error').replace(/^Error:\s*/, ''); }
+
+  function msg(t) { var m = $('msg'); if (!t) { m.classList.remove('show'); return; } m.textContent = t; m.classList.add('show'); window.scrollTo(0, 0); }
+
+  function panel(cual) {
+    ['consultando', 'panelInicio', 'panelActiva', 'ok'].forEach(function (p) { $(p).style.display = (p === cual ? 'block' : 'none'); });
+    $('quien').style.display = (cual === 'ok' || cual === 'panelActiva') ? 'none' : 'block';
+    if (cual !== 'panelActiva' && tick) { clearInterval(tick); tick = null; }
+  }
+
+  function chips(cont, items, key, quitable) {
+    cont.innerHTML = '';
+    items.forEach(function (v) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = v;
+      b.onclick = function () {
+        if (S[key] === v && quitable) { S[key] = ''; b.classList.remove('on'); return; }
+        S[key] = v;
+        Array.prototype.forEach.call(cont.children, function (c) { c.classList.remove('on'); });
+        b.classList.add('on');
+      };
+      cont.appendChild(b);
+    });
+  }
+
+  /* ---------- Tipo y nombre ---------- */
+  function cargarTipo(tipo) {
+    S.tipo = tipo;
+    document.querySelectorAll('#tipo button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-v') === tipo); });
+    var lista = tipo === 'FIJO' ? L.fijos : L.personalEventos;
+    var ev = tipo === 'FIJO' ? L.eventosFijos : L.eventos;
+    NOMBRES = lista.slice();
+    var inp = $('nombreBuscar');
+    inp.value = ''; inp.classList.remove('ok'); S.nombre = '';
+    inp.disabled = !lista.length;
+    inp.placeholder = lista.length ? 'Escribe tu nombre para buscar…' : 'No hay personal en esta lista';
+    var sel = $('evento');
+    sel.innerHTML = '<option value="">Elige el evento…</option>' + ev.map(function (v) { return '<option>' + esc(v) + '</option>'; }).join('');
+    panel('');
+  }
+  document.querySelectorAll('#tipo button').forEach(function (b) { b.onclick = function () { cargarTipo(b.getAttribute('data-v')); }; });
+
+  function elegirNombre(v, silencioso) {
+    S.nombre = v; $('nombreBuscar').value = v; $('nombreBuscar').classList.add('ok'); $('nombreLista').style.display = 'none';
+    try { localStorage.setItem(KEY, JSON.stringify({ tipo: S.tipo, nombre: v })); } catch (e) {}
+    consultar();
+  }
+
+  $('nombreBuscar').addEventListener('input', function () {
+    S.nombre = ''; this.classList.remove('ok'); panel('');
+    var q = plano(this.value), ul = $('nombreLista');
+    if (!q) { ul.style.display = 'none'; return; }
+    var partes = q.split(' ');
+    var res = NOMBRES.filter(function (n) { var p = plano(n); return partes.every(function (w) { return p.indexOf(w) >= 0; }); }).slice(0, 8);
+    ul.innerHTML = res.length ? res.map(function (n) { return '<li data-v="' + esc(n) + '">' + esc(n) + '</li>'; }).join('')
+                              : '<li class="none">No aparece. Avisa al administrador.</li>';
+    ul.style.display = 'block';
+  });
+  $('nombreLista').addEventListener('click', function (e) {
+    var li = e.target.closest('li[data-v]'); if (li) elegirNombre(li.getAttribute('data-v'));
+  });
+
+  /* ---------- Estado de la jornada ---------- */
+  function consultar() {
+    msg(''); panel('consultando');
+    google.script.run
+      .withSuccessHandler(function (r) { mostrar(r); })
+      .withFailureHandler(function (e) { panel(''); msg(limpiarErr(e)); })
+      .estadoJornada(S.nombre);
+  }
+
+  function mostrar(r) {
+    S.off = (r.ahora || Date.now()) - Date.now();   // diferencia reloj servidor - celular
+    if (!r.abierta) { S.jor = null; panel('panelInicio'); return; }
+    var j = r.jornada; S.jor = j;
+    $('iniHora').textContent = j.inicioTxt;
+    $('detalle').innerHTML =
+      '<div class="r"><span>Nombre</span><b>' + esc(j.nombre) + '</b></div>' +
+      '<div class="r"><span>Tipo</span><b>' + esc(j.tipo) + '</b></div>' +
+      '<div class="r"><span>Evento</span><b>' + esc(j.evento) + '</b></div>' +
+      '<div class="r"><span>Servicio</span><b>' + esc(j.servicio) + '</b></div>' +
+      '<div class="r"><span>Cargo</span><b>' + esc(j.cargo || 'Sin cargo') + '</b></div>';
+    $('cardManual').style.display = 'none'; $('salidaManual').value = ''; $('obs').value = '';
+    panel('panelActiva');
+    function pintar() {
+      var s = Math.max(0, Math.floor((Date.now() + S.off - j.ms) / 1000));
+      $('timer').textContent = pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s % 3600 / 60)) + ':' + pad(s % 60);
+    }
+    pintar(); tick = setInterval(pintar, 1000);
+  }
+
+  /* ---------- Reintento ante saturación ---------- */
+  var REINT = /REINTENTAR|simult|too many|demasiad|timed out|tiempo de espera|unavailable|network|no se pudo conectar|ocupad|respuesta inv[aá]lida/i;
+  function llamar(fn, arg, ok, fail, btn, txtBtn) {
+    var n = 0;
+    function go() {
+      google.script.run
+        .withSuccessHandler(function (r) { btn.disabled = false; btn.textContent = txtBtn; ok(r); })
+        .withFailureHandler(function (e) {
+          var t = limpiarErr(e);
+          if (REINT.test(t) && n < 6) { n++; btn.textContent = 'Reintentando… (' + n + '/6)'; setTimeout(go, 1500 * n); return; }
+          btn.disabled = false; btn.textContent = txtBtn; fail(t);
+        })[fn](arg);
+    }
+    btn.disabled = true; btn.textContent = 'Enviando…'; msg('');
+    go();
+  }
+
+  /* ---------- INICIAR ---------- */
+  $('btnIniciar').onclick = function () {
+    if (!S.nombre) return msg('Elige tu nombre.');
+    if (!$('evento').value) return msg('Elige el evento o lugar.');
+    if (!S.servicio) return msg('Elige el servicio que vas a realizar.');
+    llamar('iniciarJornada',
+      { tipo: S.tipo, nombre: S.nombre, evento: $('evento').value, servicio: S.servicio, cargo: S.cargo },
+      function (r) { mostrar({ abierta: true, jornada: r.jornada, ahora: r.ahora }); },
+      function (t) { msg(t); }, $('btnIniciar'), '▶ INICIAR JORNADA');
+  };
+
+  /* ---------- FINALIZAR ---------- */
+  $('btnFinalizar').onclick = function () {
+    if (!window.confirm('¿Finalizar tu jornada ahora?')) return;
+    var p = { nombre: S.nombre, observaciones: $('obs').value.trim() };
+    if ($('cardManual').style.display !== 'none') {
+      if (!$('salidaManual').value) return msg('Indica la hora real de salida.');
+      p.salida = $('salidaManual').value;
+    }
+    llamar('finalizarJornada', p,
+      function (r) {
+        panel('ok');
+        $('okTit').textContent = r.yaCerrada ? 'La jornada ya estaba finalizada' : '¡Jornada registrada!';
+        $('okTxt').textContent = r.yaCerrada ? '' : r.fecha + ' · ' + r.entrada + ' a ' + r.salida + ' · ' + r.horas + ' h en total';
+        S.jor = null; S.servicio = ''; S.cargo = '';
+      },
+      function (t) {
+        if (/^EXCEDIDA/.test(t)) { $('cardManual').style.display = 'block'; msg(t.replace(/^EXCEDIDA:\s*/, '')); }
+        else msg(t);
+      }, $('btnFinalizar'), '■ FINALIZAR JORNADA');
+  };
+
+  /* ---------- CANCELAR ---------- */
+  $('btnCancelar').onclick = function () {
+    if (!window.confirm('Se descartará esta jornada y NO se registrará ninguna hora. ¿Continuar?')) return;
+    var b = $('btnCancelar');
+    llamar('cancelarJornada', S.nombre, function () { consultar(); }, function (t) { msg(t); }, b, b.textContent);
+  };
+
+  $('nuevo').onclick = function () {
+    chips($('servicio'), L.servicios, 'servicio', false); chips($('cargo'), L.cargos, 'cargo', true);
+    $('evento').value = ''; consultar();
+  };
+
+  /* ---------- Inicio ---------- */
+  function cargar(n) {
+    google.script.run
+      .withSuccessHandler(function (l) {
+        L = l;
+        chips($('servicio'), L.servicios, 'servicio', false);
+        chips($('cargo'), L.cargos, 'cargo', true);
+        $('loading').style.display = 'none'; $('app').style.display = 'block';
+        // Recordar a la persona en este celular: abre directo en su estado
+        var u = null; try { u = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+        if (u && u.tipo) {
+          cargarTipo(u.tipo);
+          if (NOMBRES.indexOf(u.nombre) >= 0) elegirNombre(u.nombre);
+        }
+      })
+      .withFailureHandler(function (e) {
+        if (n < 5) return setTimeout(function () { cargar(n + 1); }, 1500 * (n + 1));
+        $('loading').textContent = 'No se pudo cargar. Revisa tu conexión y recarga. (' + limpiarErr(e) + ')';
+      })
+      .getListas();
+  }
+  cargar(0);
+</script>
+</body>
+</html>
